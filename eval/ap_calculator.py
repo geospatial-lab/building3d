@@ -105,15 +105,16 @@ def remove_corners(corner_a, corner_b):
     return corner
 
 class APCalculator(object):
-    def __init__(self, distance_thresh=4, confidence_thresh=0.7):
+    def __init__(self, distance_thresh=0.1, confidence_thresh=0.7):
         r"""
         :param distance_thresh: the distance thresh
         :param confidence_thresh: the edges confident thresh
         """
+        # if point clouds are not normalized, the distance_thresh set to 1
         self.distance_thresh = distance_thresh
         self.confidence_thresh = confidence_thresh
         self.batch_size = 0
-        self.ap_dict = {'tp_corners': 0, 'tp_fp_corners': 0, 'tp_fn_corners': 0, 'distance': 0, 'tp_edges': 0,
+        self.ap_dict = {'tp_corners': 0, 'tp_fp_corners': 0, 'tp_fn_corners': 0, 'distance': 0, 'tp_edges': 0, 'wed': 0,
                         'tp_fp_edges': 0, 'tp_fn_edges': 0, 'average_corner_offset': 0, 'corners_precision': 0,
                         'corners_recall': 0, 'corner_f1': 0, 'edges_precision': 0, 'edges_recall': 0, 'edges_f1': 0}
 
@@ -137,14 +138,20 @@ class APCalculator(object):
         """
         batch_size = len(batch['predicted_vertices'])
         self.batch_size = batch_size
-        predicted_corners, predicted_edges = batch['predicted_vertices'], batch['predicted_edges']
-        pred_edges_vertices = batch['pred_edges_vertices']
+        batch_predicted_corners, batch_predicted_edges = batch['predicted_vertices'], batch['predicted_edges']
+        batch_pred_edges_vertices = batch['pred_edges_vertices']
 
-        label_corners, label_edges = batch['wf_vertices'], batch['wf_edges']
-        label_edges_vertices = batch['wf_edges_vertices']
-        # centroid, max_distance = batch['centroid'], batch['max_distance']
+        batch_label_corners, batch_label_edges = batch['wf_vertices'], batch['wf_edges']
+        batch_label_edges_vertices = batch['wf_edges_vertices']
+        # batch_centroid, batch_max_distance = batch['centroid'], batch['max_distance']
 
         for b in range(batch_size):
+            predicted_corners, predicted_edges = batch_predicted_corners[b], batch_predicted_edges[b]
+            pred_edges_vertices = batch_pred_edges_vertices[b]
+
+            label_corners, label_edges = batch_label_corners[b], batch_label_edges[b]
+            label_edges_vertices = batch_label_edges_vertices[b]
+
             # ----------------------- Matching Edges ---------------------------
             # Determine whether the results include the edges.
             # When it only includes corners without any edges, the result will be considered as an empty model.
@@ -154,7 +161,7 @@ class APCalculator(object):
                 predict_indices, label_indices = linear_sum_assignment(
                     edge_distance)
                 # get the positive corners
-                edge_mask = edge_distance[predict_indices, label_indices] <= 0.1
+                edge_mask = edge_distance[predict_indices, label_indices] <= self.distance_thresh
                 pr_corners = pred_edges_vertices[predict_indices[edge_mask]]
                 gt_corners = label_edges_vertices[label_indices[edge_mask]]
 
@@ -162,9 +169,9 @@ class APCalculator(object):
                 un_match_pr_corners = remove_corners(predicted_corners, np.unique(pr_corners.reshape(-1, 3), axis=0))
                 un_match_gt_corners = remove_corners(label_corners, np.unique(gt_corners.reshape(-1, 3), axis=0))
                 distance_matrix = cdist(un_match_pr_corners, un_match_gt_corners)
-                predict_indices, label_indices = linear_sum_assignment(distance_matrix)
-                mask = distance_matrix[predict_indices, label_indices] <= 0.1
-                distances = np.sum(distance_matrix[predict_indices[mask], label_indices[mask]])
+                un_match_predict_indices, un_match_label_indices = linear_sum_assignment(distance_matrix)
+                un_match_mask = distance_matrix[un_match_predict_indices, un_match_label_indices] <= self.distance_thresh
+                distances = np.sum(distance_matrix[un_match_predict_indices[un_match_mask], un_match_label_indices[un_match_mask]])
 
                 # Get corner accuracy
                 tp_corners = len(np.unique(pr_corners.reshape(-1, 3), axis=0))  # positive corners
@@ -247,6 +254,6 @@ class APCalculator(object):
         print('Edges F1: ', self.ap_dict['edges_f1'])
 
     def reset(self):
-        self.ap_dict = {'tp_corners': 0, 'tp_fp_corners': 0, 'tp_fn_corners': 0, 'distance': 0, 'tp_edges': 0,
+        self.ap_dict = {'tp_corners': 0, 'tp_fp_corners': 0, 'tp_fn_corners': 0, 'distance': 0, 'tp_edges': 0, 'wed': 0,
                         'tp_fp_edges': 0, 'tp_fn_edges': 0, 'average_corner_offset': 0, 'corners_precision': 0,
                         'corners_recall': 0, 'corners_f1': 0, 'edges_precision': 0, 'edges_recall': 0, 'edges_f1': 0}
