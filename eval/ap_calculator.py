@@ -166,6 +166,29 @@ class APCalculator(object):
                 gt_corners = label_edges_vertices[label_indices[edge_mask]]
 
                 # Calculate independent corners that aren't used in the edges
+                '''
+                predicted_corners: np.array([[1, 2, 3], [7, 8, 9], [4, 5, 1], [7, 8, 9], [5, 3, 2], [1, 2, 4], [2, 5, 7]]) 
+                predicted_edges = np.array([[1, 2], [1, 5], [2, 4]]) # edge vertices index
+                
+                So the unmatch corners as follow:
+                    -- unused corners: [[1, 2, 3], [7, 8, 9], [2, 5, 7]]
+                    -- unassigned edge corners 
+                Thus, using remove_corners(predicted_corners, np.unique(pr_corners.reshape(-1, 3), axis=0)) to find all the unmatched corners.
+                
+                Whenever un_match_pr_corners or un_match_gt_corners is None, the distance is equal 0
+                when un_match_pr_corners is None, it means all the predicted corners are assigned to the unique gt corners
+                The number of predicted corners <= the number of the gt corners.
+                
+                when un_match_gt_corners is None, it means all the gt corners are assigned to the predicted corners.
+                The number of predicted corners >= the number of the gt corners.
+                
+                
+                ------------------------- Why is it designed this way? ------------------------------------------
+                Heuristic Wireframe Reconstruction Methods summarized in the PBWR method firstly predict the corners, and then regress edges from 
+                candidate edges formed by pairing each corner with every other corner.
+                The method may predict some corners that are correct but ultimately not utilized in constructing edges.
+                Thus, we also calculate these unused and unassigned corners.
+                '''
                 un_match_pr_corners = remove_corners(predicted_corners, np.unique(pr_corners.reshape(-1, 3), axis=0))
                 un_match_gt_corners = remove_corners(label_corners, np.unique(gt_corners.reshape(-1, 3), axis=0))
                 distance_matrix = cdist(un_match_pr_corners, un_match_gt_corners)
@@ -174,7 +197,7 @@ class APCalculator(object):
                 distances = np.sum(distance_matrix[un_match_predict_indices[un_match_mask], un_match_label_indices[un_match_mask]])
 
                 # Get corner accuracy
-                tp_corners = len(np.unique(pr_corners.reshape(-1, 3), axis=0))  # positive corners
+                tp_corners = len(np.unique(pr_corners.reshape(-1, 3), axis=0)) + sum(un_match_mask) # positive corners + positive unmatch corners
                 tp_fp_corners = len(predicted_corners)  # predicted corners
                 tp_fn_corners = len(label_corners)  # label corners
 
@@ -205,7 +228,7 @@ class APCalculator(object):
                 # Calculate independent corners that aren't used in the edges
                 distance_matrix = cdist(predicted_corners, label_corners)
                 predict_indices, label_indices = linear_sum_assignment(distance_matrix)
-                mask = distance_matrix[predict_indices, label_indices] <= 0.1
+                mask = distance_matrix[predict_indices, label_indices] <= self.distance_thresh
                 tp_corners_predict_indices, tp_corners_label_indices = predict_indices[mask], label_indices[mask]
                 distances = np.sum(distance_matrix[predict_indices[mask], label_indices[mask]])
                 tp_corners = len(tp_corners_predict_indices)
